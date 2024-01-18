@@ -1,0 +1,2 @@
+/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P SqlServer2022! -d master -i /tmp/01-BaseSuporte.sql
+/opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P SqlServer2022! -d master -i /tmp/02-BaseSuporte.sql

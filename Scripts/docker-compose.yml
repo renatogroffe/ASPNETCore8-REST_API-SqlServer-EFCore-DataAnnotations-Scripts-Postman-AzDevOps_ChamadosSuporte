@@ -1,0 +1,18 @@
+# Comandos a executar apos a criacao do container (non-root):
+#   docker exec -it scripts-sqlserver-1 bash
+#   cd /tmp
+#   bash init-sqlserver.sh
+#   exit
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      MSSQL_SA_PASSWORD: "SqlServer2022!"
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: "Evaluation"
+    ports:
+      - "1433:1433"
+    volumes:
+      - ./01-BaseSuporte.sql:/tmp/01-BaseSuporte.sql
+      - ./02-BaseSuporte.sql:/tmp/02-BaseSuporte.sql
+      - ./init-sqlserver.sh:/tmp/init-sqlserver.sh

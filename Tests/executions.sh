@@ -1,0 +1,1 @@
+newman run ChamadosSuporte.postman_collection.json -n 10
