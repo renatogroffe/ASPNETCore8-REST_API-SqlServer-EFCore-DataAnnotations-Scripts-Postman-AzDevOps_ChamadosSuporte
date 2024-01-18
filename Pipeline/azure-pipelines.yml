@@ -1,0 +1,118 @@
+trigger:
+- main
+
+resources:
+  containers:
+    - container: sqlserver
+      image: mcr.microsoft.com/mssql/server:2022-latest
+      networks: 
+      - testes
+      env:
+        MSSQL_SA_PASSWORD: SqlServer2022!
+        ACCEPT_EULA: Y
+        MSSQL_PID: Developer
+      ports:
+        - 1433:1433
+
+variables:
+  # Agent VM image name
+  vmImageName: 'ubuntu-latest'
+
+  # Variáveis para execução dos testes de integração
+  File_Log_Execution_WebApp: 'log-execution-restapi.log'
+  Path_Project: './APISuporte'
+  Dll_Project: 'APISuporte.dll'
+  Path_Tests: './Tests'
+  Collection_Postman: 'ChamadosSuporte.postman_collection.json'
+  Path_ScriptsSqlServer: './Scripts'
+  Iterations: 10
+  ConnectionStrings__BaseSuporte: 'Server=127.0.0.1,1433;Database=BaseSuporte;User Id=sa;Password=SqlServer2022!;TrustServerCertificate=True;'
+  appsettings_Path: './APISuporte/appsettings.json'
+
+stages:
+- stage: Tests
+  displayName: Tests stage
+  jobs:
+  - job: Tests
+    displayName: Tests
+    pool:
+      vmImage: $(vmImageName)
+    services:
+      sqlserver: sqlserver
+    steps:
+    - script: |
+        docker images
+        sleep 10s
+        docker container ls
+      displayName: Exibir imagens e container em execução
+    - script: |
+        /opt/mssql-tools/bin/sqlcmd -S "127.0.0.1,1433" -U sa -P SqlServer2022! -d master -i $(Path_ScriptsSqlServer)/01-BaseSuporte.sql
+      displayName: Criar banco basesuporte
+    - script: |
+        /opt/mssql-tools/bin/sqlcmd -S "127.0.0.1,1433" -U sa -P SqlServer2022! -d master -i $(Path_ScriptsSqlServer)/02-BaseSuporte.sql
+      displayName: Criar estruturas banco BaseSuporte
+    - script: |
+        echo '*** SDKs do .NET intalados ***'
+        dotnet --list-sdks
+        echo '*** Versão assumida como default para o .NET ***'
+        dotnet --version
+      displayName: Exibir versoes instaladas do .NET SDK
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.101'
+      displayName: Instalar .NET SDK 8.0.101
+    - script: |
+        echo '*** SDKs do .NET intalados ***'
+        dotnet --list-sdks
+        echo '*** Versão assumida como default para o .NET ***'
+        dotnet --version
+      displayName: Exibir versoes instaladas do .NET SDK (apos ajustes)
+    - script: |
+        dotnet publish $(Path_Project) -c Release -o app
+        cd ./app
+        nohup dotnet $(Dll_Project) > $(File_Log_Execution_WebApp) 2>&1 &
+        echo 'Aguardando a inicialização da aplicação a ser testada...'
+        sleep 10s
+      displayName: Executar a aplicação a ser testada em background (nohup)
+      env:
+        ASPNETCORE_URLS: 'http://localhost:5000'
+    - script: |
+        echo "** Versão Global do Newman **"
+        newman -v
+        npm install newman-reporter-htmlextra@1.23.0
+        npm install newman-reporter-junitfullreport@1.0.4
+      displayName:  Instalar packages newman-reporter-htmlextra e newman-reporter-junitfullreport
+      condition: always() 
+    - script: |
+        cd $(Path_Tests)
+        npx newman run $(Collection_Postman) -n $(Iterations) -r cli,htmlextra,junitfullreport
+      displayName: Executar e gerar resultados em HTML e XML dos testes da API REST com Newman
+      condition: always()
+    - script: |
+        cd $(Path_Tests)/newman
+        ls
+      displayName: Listar arquivos gerados após testes da API REST com Newman
+      condition: always() 
+    - script: |
+        cd /opt/mssql-tools/bin/
+        sqlcmd -S "127.0.0.1,1433" -U sa -P SqlServer2022! -d master -Q "USE BaseSuporte; SELECT * FROM dbo.Chamados;"
+      condition: always() 
+      displayName: Exibir registros criados na base de dados
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '**/newman/*.xml'
+        searchFolder: '$(Build.SourcesDirectory)'
+      displayName: Publicar sumário dos testes com base no XML gerado
+      condition: always()
+    - task: UploadPostmanHtmlReport@1
+      displayName: Publicar relatório em HTML com resultados dos testes da API REST com Newman
+      inputs:
+        cwd: '$(System.DefaultWorkingDirectory)/$(Path_Tests)'
+      condition: always()
+    - script: |
+        cd ./app
+        cat $(File_Log_Execution_WebApp)
+      displayName: Exibir log de execução da aplicação testada
+      condition: Always()
